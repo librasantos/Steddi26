@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Steddi — Family Board</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    :root {
+      --bg: #0F1923; --surface: rgba(255,255,255,0.06); --surface2: rgba(255,255,255,0.10);
+      --border: rgba(255,255,255,0.10); --text: #F5F0EA; --muted: rgba(245,240,234,0.45);
+      --accent: #E07840; --done: #5A8A6E; --defer: #7A6EA8; --recur: #2A8F8F;
+    }
+    html, body { height:100%; overflow:hidden; }
+    body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; }
+    .bg-gradient { position:fixed; inset:0; z-index:0;
+      background: radial-gradient(ellipse at 20% 50%, rgba(46,139,122,0.12) 0%, transparent 60%),
+                  radial-gradient(ellipse at 80% 20%, rgba(224,120,64,0.10) 0%, transparent 55%),
+                  radial-gradient(ellipse at 60% 80%, rgba(122,110,168,0.08) 0%, transparent 50%), #0F1923; }
+    .board { position:relative; z-index:1; height:100vh; display:grid;
+      grid-template-columns:1fr 2fr 1fr; grid-template-rows:auto 1fr auto; }
+    /* Mobile portrait — stack columns vertically and allow scroll */
+    @media (max-width: 820px), (orientation: portrait) and (max-width: 1100px) {
+      .board { height:auto; min-height:100vh; grid-template-columns:1fr; grid-template-rows:auto auto auto auto; overflow-y:auto; }
+      .col { padding:18px 20px !important; max-height:none !important; }
+      .col-center { border-left:none !important; border-right:none !important;
+        border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+      .header { flex-wrap:wrap; padding:14px 18px !important; gap:10px !important; }
+      .header-left { flex:1; min-width:0; }
+      .clock-block { text-align:left !important; }
+      .time { font-size:32px !important; }
+      .date-str { font-size:12px !important; }
+      .logo { font-size:18px !important; }
+      .col-title { font-size:11px !important; margin-bottom:8px !important; }
+      .cal-grid { gap:4px !important; }
+      .cal-day { font-size:13px !important; min-height:38px; }
+      .cal-day-label { font-size:11px !important; padding-bottom:6px !important; }
+    }
+    .header { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between;
+      padding:clamp(12px,2vh,28px) clamp(20px,3vw,48px); border-bottom:1px solid var(--border);
+      background:rgba(15,25,35,0.7); backdrop-filter:blur(20px); gap:16px; }
+    .header-left { display:flex; align-items:center; gap:16px; }
+    .logo { font-family:'Lora',serif; font-size:clamp(16px,2vw,24px); color:var(--accent); }
+    .family-label { font-size:clamp(10px,1.1vw,14px); color:var(--muted); letter-spacing:3px; text-transform:uppercase; }
+    .code-display { font-size:clamp(10px,1vw,13px); background:rgba(224,120,64,0.12);
+      color:var(--accent); padding:4px 12px; border-radius:50px; font-weight:600; letter-spacing:2px; }
+    .sync-dot { width:8px; height:8px; border-radius:50%; background:#5A8A6E; flex-shrink:0;
+      transition:background 0.3s; }
+    .sync-dot.syncing { background:var(--accent); animation:pulse 1s ease-in-out infinite; }
+    .sync-dot.offline { background:#888; }
+    @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
+    .clock-block { text-align:right; }
+    .time { font-family:'Lora',serif; font-size:clamp(28px,5vw,64px); letter-spacing:-2px; line-height:1; }
+    .date-str { font-size:clamp(11px,1.2vw,16px); color:var(--muted); font-weight:300; margin-top:2px; }
+    .col { padding:clamp(12px,1.8vh,24px) clamp(16px,1.8vw,32px); overflow:hidden;
+      display:flex; flex-direction:column; gap:10px; }
+    .col-center { border-left:1px solid var(--border); border-right:1px solid var(--border); }
+    .col-title { font-size:clamp(9px,0.9vw,12px); letter-spacing:3px; text-transform:uppercase;
+      color:var(--muted); font-weight:700; margin-bottom:4px; flex-shrink:0; }
+    .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:clamp(2px,0.3vw,5px); }
+    .cal-day-label { text-align:center; font-size:clamp(8px,0.85vw,11px); color:var(--muted); font-weight:500; padding-bottom:4px; }
+    .cal-day { aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      border-radius:10px; font-size:clamp(10px,1vw,14px); font-weight:300; color:var(--muted);
+      cursor:default; position:relative; transition:background 0.15s; border:none; background:transparent; }
+    .cal-day.has-tasks { color:var(--text); font-weight:500; background:var(--surface); cursor:pointer; }
+    .cal-day.is-today { background:var(--accent); color:white; font-weight:700; box-shadow:0 4px 16px rgba(224,120,64,0.4); cursor:pointer; }
+    .cal-day.selected:not(.is-today) { background:var(--surface2); outline:1.5px solid var(--accent); color:var(--text); }
+    .cal-dots { display:flex; gap:2px; margin-top:2px; }
+    .cal-dot { width:4px; height:4px; border-radius:50%; }
+    .task-item { display:flex; align-items:flex-start; gap:10px;
+      padding:clamp(8px,1.2vh,14px) clamp(12px,1.3vw,18px);
+      background:var(--surface); border-radius:12px; border:1px solid var(--border); flex-shrink:0; }
+    .task-item.active { border-color:rgba(224,120,64,0.35); background:rgba(224,120,64,0.07); }
+    .task-item.done { opacity:0.4; }
+    .task-icon { width:clamp(24px,2.5vw,36px); height:clamp(24px,2.5vw,36px); border-radius:8px;
+      display:flex; align-items:center; justify-content:center; font-size:clamp(12px,1.4vw,18px); flex-shrink:0; margin-top:1px; }
+    .task-name { font-size:clamp(12px,1.3vw,18px); font-weight:600; line-height:1.3; word-break:break-word; }
+    .task-meta { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; }
+    .pill { font-size:clamp(8px,0.8vw,11px); padding:2px 7px; border-radius:50px; font-weight:500; }
+    .task-scroll { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:7px; scrollbar-width:none; }
+    .task-scroll::-webkit-scrollbar { display:none; }
+    .sel-header { font-family:'Lora',serif; font-size:clamp(13px,1.4vw,20px); color:var(--text); margin-bottom:8px; flex-shrink:0; }
+    .sel-scroll { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:7px; scrollbar-width:none; }
+    .sel-scroll::-webkit-scrollbar { display:none; }
+    .footer { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between;
+      padding:clamp(6px,1vh,12px) clamp(20px,3vw,48px); border-top:1px solid var(--border);
+      background:rgba(15,25,35,0.7); backdrop-filter:blur(20px); gap:12px; flex-wrap:wrap; }
+    .legend { display:flex; gap:14px; flex-wrap:wrap; }
+    .legend-item { display:flex; align-items:center; gap:5px; font-size:clamp(9px,0.85vw,11px); color:var(--muted); }
+    .legend-dot { width:7px; height:7px; border-radius:50%; }
+    .streak { font-size:clamp(10px,1vw,14px); color:var(--accent); font-weight:600; }
+    .sync-note { font-size:clamp(9px,0.85vw,11px); color:var(--muted); display:flex; align-items:center; gap:6px; }
+    .empty { display:flex; flex-direction:column; align-items:center; justify-content:center;
+      padding:20px 0; gap:6px; opacity:0.35; }
+    .empty-icon { font-size:clamp(20px,2.5vw,32px); }
+    .empty-text { font-size:clamp(10px,1vw,13px); color:var(--muted); font-style:italic; text-align:center; }
+
+    /* Chore add modal — replaces native prompt() */
+    .chore-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(8px); z-index:200;
+      display:none; align-items:center; justify-content:center; padding:20px; }
+    .chore-modal-bg.show { display:flex; }
+    .chore-modal { background:#1A2535; border:1px solid rgba(255,255,255,0.12); border-radius:20px;
+      padding:28px; max-width:380px; width:100%; box-shadow:0 24px 60px rgba(0,0,0,0.5); }
+    .chore-modal h3 { font-family:'Lora',serif; font-size:22px; color:var(--text); margin-bottom:6px; font-weight:500; }
+    .chore-modal p { font-size:13px; color:var(--muted); margin-bottom:18px; line-height:1.5; }
+    .chore-modal label { display:block; font-size:10px; letter-spacing:2px; text-transform:uppercase;
+      color:var(--muted); font-weight:600; margin-bottom:6px; margin-top:14px; }
+    .chore-modal input { width:100%; padding:12px 14px; font-size:15px; border:none; border-radius:12px;
+      background:rgba(255,255,255,0.06); color:var(--text); outline:none; font-family:'DM Sans',sans-serif;
+      box-shadow:inset 0 0 0 1.5px rgba(255,255,255,0.10); transition:box-shadow 0.15s; }
+    .chore-modal input:focus { box-shadow:inset 0 0 0 1.5px var(--accent); }
+    .chore-modal-actions { display:flex; gap:10px; margin-top:22px; }
+    .chore-modal-cancel { flex:1; padding:12px; background:transparent; border:1px solid rgba(255,255,255,0.15);
+      color:var(--muted); border-radius:50px; font-size:14px; font-family:'DM Sans',sans-serif; cursor:pointer;
+      font-weight:500; }
+    .chore-modal-save { flex:1; padding:12px; background:var(--accent); border:none; color:white;
+      border-radius:50px; font-size:14px; font-family:'DM Sans',sans-serif; cursor:pointer; font-weight:600;
+      box-shadow:0 4px 16px rgba(224,120,64,0.35); }
+
+    /* Ambient dim — automatically softens after 9pm */
+    body.dim { filter: brightness(0.72) contrast(0.95); transition: filter 1.2s ease; }
+    body.dim-deep { filter: brightness(0.55) contrast(0.92); transition: filter 1.2s ease; }
+
+    /* Setup modal */
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100;
+      display:flex; align-items:center; justify-content:center; backdrop-filter:blur(8px); }
+    .modal { background:#1A2535; border:1px solid rgba(255,255,255,0.12); border-radius:24px;
+      padding:40px; max-width:420px; width:90%; text-align:center; }
+    .modal h2 { font-family:'Lora',serif; font-size:26px; color:var(--text); margin-bottom:8px; }
+    .modal p { font-size:14px; color:var(--muted); font-weight:300; line-height:1.7; margin-bottom:24px; }
+    .modal input { width:100%; padding:14px 18px; font-size:22px; text-align:center; font-weight:700;
+      letter-spacing:4px; text-transform:uppercase; border:2px solid rgba(255,255,255,0.15);
+      border-radius:14px; background:rgba(255,255,255,0.06); color:var(--text);
+      outline:none; font-family:'DM Sans',sans-serif; margin-bottom:8px; }
+    .modal input:focus { border-color:var(--accent); }
+    .modal input::placeholder { color:rgba(245,240,234,0.2); font-weight:300; letter-spacing:2px; font-size:16px; text-transform:none; }
+    .modal-hint { font-size:12px; color:var(--muted); margin-bottom:24px; }
+    .modal-btn { width:100%; padding:14px; background:var(--accent); color:white; border:none;
+      border-radius:50px; font-size:16px; font-family:'DM Sans',sans-serif; font-weight:600;
+      cursor:pointer; margin-bottom:12px; transition:opacity 0.2s; }
+    .modal-btn:hover { opacity:0.9; }
+    .modal-btn-sec { width:100%; padding:12px; background:transparent; color:var(--muted);
+      border:1px solid rgba(255,255,255,0.12); border-radius:50px; font-size:14px;
+      font-family:'DM Sans',sans-serif; cursor:pointer; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    .anim { animation:fadeIn 0.3s ease forwards; }
+    .chore-item { display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface);border-radius:10px;margin-bottom:5px;border:1px solid var(--border);cursor:pointer;transition:opacity 0.15s; }
+    .chore-item.done { opacity:0.4; }
+    .chore-check { width:18px;height:18px;border-radius:50%;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px; }
+    .chore-item.done .chore-check { background:var(--done);border-color:var(--done);color:white; }
+    .chore-text { flex:1;font-size:clamp(11px,1.1vw,14px);font-weight:500;color:var(--text); }
+    .chore-item.done .chore-text { text-decoration:line-through; }
+    .chore-who { font-size:10px;color:var(--muted);flex-shrink:0; }
+  </style>
+</head>
+<body>
+<div class="bg-gradient"></div>
+
+<!-- Setup Modal -->
+<div class="modal-overlay" id="setup-modal">
+  <div class="modal">
+    <div style="font-size:40px;margin-bottom:16px;">🐬</div>
+    <h2>Family Board</h2>
+    <p>Enter your family code to see your shared tasks and schedule on this screen.</p>
+    <input type="text" id="code-input" placeholder="e.g. SMITH2025" maxlength="16"
+      autocapitalize="characters" autocorrect="off" spellcheck="false"/>
+    <div class="modal-hint" id="code-hint">Enter the same code you set in Steddi Settings</div>
+    <button class="modal-btn" onclick="connectCode()">Connect →</button>
+    <button class="modal-btn-sec" onclick="useLocalOnly()">Use this device's data</button>
+  </div>
+</div>
+
+<div class="board" id="board" style="display:none">
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">steddi 🐬</div>
+      <div class="family-label">Family Board</div>
+      <div class="code-display" id="code-badge" style="display:none"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span class="sync-note" id="sync-note">Connecting...</span>
+      <button onclick="showSetup()" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:50px;cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;">Change code</button>
+    </div>
+    <div class="clock-block">
+      <div class="time" id="clock">--:--</div>
+      <div class="date-str" id="datestr"></div>
+      <div id="weather-strip" style="font-size:13px;color:var(--muted);margin-top:4px;display:flex;align-items:center;gap:6px;justify-content:flex-end;"></div>
+    </div>
+  </header>
+
+  <div class="col">
+    <div class="col-title">Today</div>
+    <div class="task-scroll" id="today-tasks"></div>
+    <div id="chore-section" style="margin-top:16px;flex-shrink:0;">
+      <div class="col-title" style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+        <span>Chores</span>
+        <button onclick="addChore()" style="background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">+ Add</button>
+      </div>
+      <div id="chore-list"></div>
+    </div>
+  </div>
+
+  <div class="col col-center">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+      <div class="col-title" id="cal-month-label"></div>
+      <div style="display:flex;gap:4px;">
+        <button onclick="changeMonth(-1)" style="background:var(--surface);border:none;color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;font-size:16px;">‹</button>
+        <button onclick="changeMonth(1)"  style="background:var(--surface);border:none;color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;font-size:16px;">›</button>
+      </div>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+    <div class="sel-scroll" id="selected-day"></div>
+  </div>
+
+  <div class="col">
+    <div class="col-title">Upcoming</div>
+    <div class="task-scroll" id="other-tasks"></div>
+  </div>
+
+  <footer class="footer">
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#E07840"></div>Active</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#5A8A6E"></div>Done</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#7A6EA8"></div>Scheduled</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2A8F8F"></div>Recurring</div>
+    </div>
+    <div id="intention-area"></div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="streak" id="streak-area"></div>
+      <div class="sync-note" id="footer-sync"></div>
+      <a href="/" style="font-size:11px;color:var(--muted);text-decoration:none;background:rgba(255,255,255,0.06);padding:5px 12px;border-radius:50px;white-space:nowrap;flex-shrink:0;">← Steddi App</a>
+    </div>
+  </footer>
+</div>
+
+<!-- Chore add modal — replaces native prompt() -->
+<div class="chore-modal-bg" id="chore-modal">
+  <div class="chore-modal">
+    <h3>Add a chore</h3>
+    <p>It'll show up on the kitchen board until someone checks it off.</p>
+    <label>Chore name</label>
+    <input type="text" id="chore-name" placeholder="e.g. Take out trash" maxlength="60" />
+    <label>Who? (optional)</label>
+    <input type="text" id="chore-who" placeholder="Leave blank for everyone" maxlength="20" />
+    <div class="chore-modal-actions">
+      <button class="chore-modal-cancel" onclick="closeChoreModal()">Cancel</button>
+      <button class="chore-modal-save" onclick="saveChoreFromModal()">Add chore</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SYNC_KEY = 'steddi_family_code';
+const LOCAL_ONLY_KEY = 'steddi_board_local_only';
+const MEMBERS_KEY = 'steddi_cal_settings';
+const MEMBER_COLORS = [
+  {hex:'#F0A8A0', dark:'#C4605A', bg:'#FDF2F1'},
+  {hex:'#A8C8F0', dark:'#4A7AB8', bg:'#F1F6FD'},
+  {hex:'#A8E0C0', dark:'#3A8A60', bg:'#F1FAF4'},
+  {hex:'#D0B8F0', dark:'#7A5AB8', bg:'#F7F2FD'},
+  {hex:'#F0D0A8', dark:'#B87A3A', bg:'#FDF8F1'},
+  {hex:'#F0B8D0', dark:'#B84A7A', bg:'#FDF2F7'},
+  {hex:'#B8E8E8', dark:'#3A8888', bg:'#F1FAFA'},
+  {hex:'#D8D8A8', dark:'#787840', bg:'#FAFAF1'},
+];
+function loadMembersFamily() {
+  try {
+    const s = JSON.parse(localStorage.getItem(MEMBERS_KEY)||'{}');
+    return s.members && s.members.length ? s.members : [{name:'Me',colorIdx:0}];
+  } catch(e) { return [{name:'Me',colorIdx:0}]; }
+}
+function memberColorForTask(task, members) {
+  const who = task.assignee || task.collab || task.who || null;
+  if(!who) return MEMBER_COLORS[0];
+  const m = members.find(x => x.name && x.name.toLowerCase() === String(who).toLowerCase());
+  return m ? MEMBER_COLORS[m.colorIdx % 8] : MEMBER_COLORS[0];
+}
+let familyCode = null;
+let localOnly = false;
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+let selectedDate = null;
+let taskMap = {};
+let currentData = null;
+
+// ── SETUP ─────────────────────────────────────────────────────
+function init() {
+  const saved = localStorage.getItem(SYNC_KEY);
+  const lo = localStorage.getItem(LOCAL_ONLY_KEY);
+  if (saved) { familyCode = saved; showBoard(); }
+  else if (lo) { localOnly = true; showBoard(); }
+  else { showSetup(); }
+}
+
+function showSetup() {
+  document.getElementById('setup-modal').style.display = 'flex';
+  document.getElementById('board').style.display = 'none';
+  setTimeout(()=>document.getElementById('code-input').focus(), 100);
+}
+
+function connectCode() {
+  const raw = document.getElementById('code-input').value.trim();
+  const code = raw.toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,32);
+  if (code.length < 3) {
+    document.getElementById('code-hint').textContent = '⚠️ Code must be at least 3 characters';
+    document.getElementById('code-hint').style.color = '#E07840';
+    return;
+  }
+  familyCode = code;
+  localOnly = false;
+  localStorage.setItem(SYNC_KEY, code);
+  localStorage.removeItem(LOCAL_ONLY_KEY);
+  showBoard();
+}
+
+function useLocalOnly() {
+  familyCode = null;
+  localOnly = true;
+  localStorage.setItem(LOCAL_ONLY_KEY, '1');
+  showBoard();
+}
+
+document.getElementById('code-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') connectCode();
+});
+
+function showBoard() {
+  document.getElementById('setup-modal').style.display = 'none';
+  document.getElementById('board').style.display = 'grid';
+  if (familyCode) {
+    document.getElementById('code-badge').textContent = familyCode.toUpperCase();
+    document.getElementById('code-badge').style.display = 'inline';
+  }
+  startClock();
+  render();
+  setInterval(render, 15000);
+  window.addEventListener('storage', render);
+}
+
+// ── CLOCK ─────────────────────────────────────────────────────
+function startClock() {
+  function tick() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    document.getElementById('datestr').textContent =
+      now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  }
+  setInterval(tick, 1000); tick();
+}
+
+// ── DATA FETCH ────────────────────────────────────────────────
+function setSyncStatus(status, msg) {
+  const dot = document.getElementById('sync-dot');
+  const note = document.getElementById('sync-note');
+  dot.className = 'sync-dot ' + (status === 'ok' ? '' : status === 'syncing' ? 'syncing' : 'offline');
+  note.textContent = msg;
+}
+
+async function fetchData() {
+  if (localOnly || !familyCode) {
+    // Read from localStorage
+    try {
+      const raw = localStorage.getItem('steddi_v3');
+      const data = raw ? JSON.parse(raw) : null;
+      const dump = JSON.parse(localStorage.getItem('steddi_dump_v2')||'[]');
+      setSyncStatus('offline', 'Local device only');
+      return data ? { ...data, _dump: dump } : null;
+    } catch(e) { return null; }
+  }
+
+  setSyncStatus('syncing', 'Syncing...');
+  try {
+    const res = await fetch(`/api/family?code=${encodeURIComponent(familyCode)}`);
+    if (!res.ok) {
+      setSyncStatus('offline', res.status === 404 ? 'No data yet — open Steddi to start' : 'Error fetching');
+      return null;
+    }
+    const json = await res.json();
+    if (!json.ok) { setSyncStatus('offline', 'No data found'); return null; }
+    setSyncStatus('ok', 'Synced ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}));
+    document.getElementById('footer-sync').textContent = 'Last sync: ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    return json;
+  } catch(e) {
+    setSyncStatus('offline', 'Offline — showing last known');
+    return null;
+  }
+}
+
+// ── TASK MAP ──────────────────────────────────────────────────
+function buildTaskMap(data) {
+  taskMap = {};
+  if (!data) return;
+  const todayIso = new Date().toISOString().split('T')[0];
+  function add(ds, t, type) { if(!ds)return; if(!taskMap[ds])taskMap[ds]=[]; taskMap[ds].push({...t,type}); }
+  (data.activeTasks||[]).forEach(t=>add(todayIso,t,'active'));
+  (data.allTasks||[]).slice(0,5).forEach(t=>add(todayIso,t,'queued'));
+  (data.doneTasks||[]).forEach(t=>add(todayIso,t,'done'));
+  (data.deferred||[]).forEach(t=>add(t.date,t,'deferred'));
+  const today=new Date(); today.setHours(0,0,0,0);
+  [...(data.activeTasks||[]),...(data.allTasks||[])].filter(t=>t.recur).forEach(t=>{
+    for(let i=0;i<90;i++){
+      const d=new Date(today); d.setDate(d.getDate()+i);
+      const dow=d.getDay(), ds=d.toISOString().split('T')[0];
+      if(t.recur==='daily') add(ds,t,'recur');
+      else if(t.recur==='weekdays'&&dow>=1&&dow<=5) add(ds,t,'recur');
+      else if(t.recur==='weekly'&&dow===today.getDay()) add(ds,t,'recur');
+    }
+  });
+}
+
+// ── RENDER ────────────────────────────────────────────────────
+async function render() {
+  currentData = await fetchData();
+  buildTaskMap(currentData);
+
+  // Today column
+  const todayIso = new Date().toISOString().split('T')[0];
+  const todayTasks = taskMap[todayIso]||[];
+  document.getElementById('today-tasks').innerHTML = todayTasks.length
+    ? todayTasks.map(taskHtml).join('')
+    : emptyHtml('🌅','No tasks yet today');
+
+  // Right column
+  const deferred = (currentData?.deferred||[]).map(t=>({...t,type:'deferred'}));
+  const queued = (currentData?.allTasks||[]).map(t=>({...t,type:'queued'}));
+  document.getElementById('other-tasks').innerHTML = [...deferred,...queued].length
+    ? [...deferred,...queued].map(taskHtml).join('')
+    : emptyHtml('📭','Nothing scheduled ahead');
+
+  // Streak
+  const streakEl = document.getElementById('streak-area');
+  const sc = currentData?.streak||0;
+  streakEl.textContent = sc>1 ? '🔥 '+sc+' day streak' : '';
+
+  // Intention
+  const intEl = document.getElementById('intention-area');
+  const intent = currentData?.intention;
+  intEl.innerHTML = intent
+    ? `<div style="font-family:'Lora',serif;font-size:clamp(11px,1.2vw,15px);color:rgba(224,120,64,0.7);font-style:italic;">✦ "${esc(intent)}"</div>`
+    : '';
+
+  renderCalendar();
+}
+
+// ── CALENDAR ─────────────────────────────────────────────────
+function changeMonth(dir) {
+  calMonth += dir;
+  if(calMonth>11){calMonth=0;calYear++;}
+  if(calMonth<0){calMonth=11;calYear--;}
+  selectedDate=null; renderCalendar();
+}
+
+function renderCalendar() {
+  document.getElementById('cal-month-label').textContent =
+    new Date(calYear,calMonth,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}).toUpperCase();
+
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d=>{
+    const el=document.createElement('div'); el.className='cal-day-label'; el.textContent=d; grid.appendChild(el);
+  });
+
+  const first=new Date(calYear,calMonth,1).getDay();
+  const days=new Date(calYear,calMonth+1,0).getDate();
+  const todayStr=new Date().toISOString().split('T')[0];
+  for(let i=0;i<first;i++) grid.appendChild(document.createElement('div'));
+
+  for(let d=1;d<=days;d++){
+    const ds=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const tasks=taskMap[ds]||[];
+    const isToday=ds===todayStr, isSel=ds===selectedDate;
+    const btn=document.createElement('button');
+    btn.className='cal-day'+(isToday?' is-today':'')+(tasks.length?' has-tasks':'')+(isSel&&!isToday?' selected':'');
+    btn.innerHTML=`<span>${d}</span>`;
+    if(tasks.length&&!isToday){
+      const fmembers = loadMembersFamily();
+      const dots=document.createElement('div'); dots.className='cal-dots';
+      // Collect unique member colors for this day
+      const seen = new Set();
+      const memberDots = [];
+      tasks.forEach(t => {
+        const mc = memberColorForTask(t, fmembers);
+        if(!seen.has(mc.hex)) { seen.add(mc.hex); memberDots.push(mc); }
+      });
+      memberDots.slice(0,3).forEach(mc => {
+        const dot=document.createElement('div'); dot.className='cal-dot';
+        dot.style.background = mc.hex;
+        dot.style.boxShadow = `0 0 0 0.5px ${mc.dark}40`;
+        dots.appendChild(dot);
+      });
+      btn.appendChild(dots);
+    }
+    btn.onclick=()=>{ selectedDate=isSel?null:ds; renderCalendar(); renderSelectedDay(); };
+    grid.appendChild(btn);
+  }
+  renderSelectedDay();
+}
+
+function renderSelectedDay() {
+  const el=document.getElementById('selected-day');
+  if(!selectedDate){ el.innerHTML=emptyHtml('📅','Tap a day to see its tasks'); return; }
+  const tasks=taskMap[selectedDate]||[];
+  const label=new Date(selectedDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  el.innerHTML=`<div class="sel-header">${label}</div>`+
+    (tasks.length ? tasks.map(taskHtml).join('') : emptyHtml('✨','Nothing scheduled — a free day'));
+}
+
+// ── HELPERS ───────────────────────────────────────────────────
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmt(t){try{return new Date('2000-01-01T'+t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return t;}}
+function emptyHtml(icon,msg){return`<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-text">${msg}</div></div>`;}
+
+function taskHtml(t) {
+  const iconMap={active:'▶',done:'✓',deferred:'📌',recur:'🔁',queued:'○'};
+  const bgMap={active:'rgba(224,120,64,0.15)',done:'rgba(90,138,110,0.15)',deferred:'rgba(122,110,168,0.15)',recur:'rgba(42,143,143,0.15)',queued:'rgba(255,255,255,0.06)'};
+  const pills = [
+    t.type==='active' ? `<span class="pill" style="background:rgba(224,120,64,0.2);color:#E8A060">Now</span>` : '',
+    t.type==='done'   ? `<span class="pill" style="background:rgba(90,138,110,0.2);color:#7AC896">Done ✓</span>` : '',
+    t.type==='deferred'?`<span class="pill" style="background:rgba(122,110,168,0.2);color:#B0A0D8">📌 ${relDate(t.date)}</span>` : '',
+    t.type==='recur'  ? `<span class="pill" style="background:rgba(42,143,143,0.2);color:#4ABCBC">🔁 ${t.recur==='daily'?'Daily':t.recur==='weekdays'?'Weekdays':'Weekly'}</span>` : '',
+    t.type==='queued' ? `<span class="pill" style="background:rgba(255,255,255,0.07);color:rgba(245,240,234,0.4)">Queued</span>` : '',
+    t.priority==='must' ? `<span class="pill" style="background:rgba(224,92,92,0.2);color:#E88080">Must do</span>` : '',
+    t.time ? `<span class="pill" style="background:rgba(255,255,255,0.07);color:rgba(245,240,234,0.5)">⏰ ${fmt(t.time)}</span>` : '',
+  ].filter(Boolean).join('');
+  return `<div class="task-item ${t.type==='active'?'active':''} ${t.type==='done'?'done':''} anim">
+    <div class="task-icon" style="background:${bgMap[t.type]||bgMap.queued}">${iconMap[t.type]||'·'}</div>
+    <div style="flex:1;min-width:0">
+      <div class="task-name" style="${t.type==='done'?'text-decoration:line-through;':''}">${esc(t.text)}</div>
+      <div class="task-meta">${pills}</div>
+    </div>
+  </div>`;
+}
+
+function relDate(ds) {
+  try {
+    const d=new Date(ds+'T12:00:00'), today=new Date(); today.setHours(0,0,0,0);
+    const diff=Math.round((d-today)/(1000*60*60*24));
+    if(diff===0) return 'Today'; if(diff===1) return 'Tomorrow';
+    if(diff<7) return d.toLocaleDateString('en-US',{weekday:'short'});
+    return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  } catch(e){return ds;}
+}
+
+// ── WEATHER ───────────────────────────────────────────────────
+async function fetchWeather() {
+  try {
+    // Use open-meteo — completely free, no API key needed
+    const geo = await fetch('https://ipapi.co/json/').then(r=>r.json());
+    if (!geo.latitude) return;
+    const w = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${geo.latitude}&longitude=${geo.longitude}&current=temperature_2m,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph`
+    ).then(r=>r.json());
+    const temp = Math.round(w.current?.temperature_2m||0);
+    const code = w.current?.weather_code||0;
+    const icon = code<=1?'☀️':code<=3?'⛅':code<=67?'🌧':code<=77?'❄️':code<=82?'🌦':'⛈';
+    const el = document.getElementById('weather-strip');
+    if(el) el.innerHTML = `${icon} ${temp}°F · ${geo.city||''}`;
+  } catch(e) {}
+}
+fetchWeather();
+setInterval(fetchWeather, 30*60*1000);
+
+// ── CHORES ────────────────────────────────────────────────────
+const CHORE_KEY = 'steddi_chores';
+function loadChores() {
+  try {
+    const raw = localStorage.getItem(CHORE_KEY);
+    return raw ? JSON.parse(raw) : getDefaultChores();
+  } catch(e) { return getDefaultChores(); }
+}
+function getDefaultChores() {
+  return [
+    {id:'1',text:'Make bed',who:'Everyone',done:false,doneDate:''},
+    {id:'2',text:'Dishes',who:'Kids',done:false,doneDate:''},
+    {id:'3',text:'Take out trash',who:'',done:false,doneDate:''},
+  ];
+}
+function saveChores(chores) {
+  try { localStorage.setItem(CHORE_KEY, JSON.stringify(chores)); } catch(e) {}
+}
+function toggleChore(id) {
+  const chores = loadChores();
+  const today = new Date().toDateString();
+  const c = chores.find(ch=>ch.id===id);
+  if(!c) return;
+  // Reset if done on a different day
+  if(c.done && c.doneDate !== today) c.done = false;
+  c.done = !c.done;
+  c.doneDate = c.done ? today : '';
+  saveChores(chores);
+  renderChores(chores);
+}
+function addChore() {
+  const m = document.getElementById('chore-modal');
+  const nameInput = document.getElementById('chore-name');
+  const whoInput = document.getElementById('chore-who');
+  nameInput.value = '';
+  whoInput.value = '';
+  m.classList.add('show');
+  setTimeout(()=>nameInput.focus(), 100);
+  // Submit on Enter
+  nameInput.onkeydown = e => { if(e.key==='Enter') saveChoreFromModal(); };
+  whoInput.onkeydown = e => { if(e.key==='Enter') saveChoreFromModal(); };
+  // Click backdrop to close
+  m.onclick = e => { if(e.target===m) closeChoreModal(); };
+}
+function closeChoreModal() {
+  document.getElementById('chore-modal').classList.remove('show');
+}
+function saveChoreFromModal() {
+  const text = document.getElementById('chore-name').value.trim();
+  const who = document.getElementById('chore-who').value.trim();
+  if(!text) { document.getElementById('chore-name').focus(); return; }
+  const chores = loadChores();
+  chores.push({id:Date.now().toString(36),text,who,done:false,doneDate:''});
+  saveChores(chores);
+  renderChores(chores);
+  closeChoreModal();
+}
+
+// Ambient dim — auto-darken after 9pm so the kitchen tablet doesn't glow at night
+function checkAmbient() {
+  const h = new Date().getHours();
+  document.body.classList.remove('dim','dim-deep');
+  if(h >= 22 || h < 6) document.body.classList.add('dim-deep');
+  else if(h >= 21 || h < 7) document.body.classList.add('dim');
+}
+checkAmbient();
+setInterval(checkAmbient, 5*60*1000); // re-check every 5 min
+function renderChores(chores) {
+  // Reset done status if from a different day
+  const today = new Date().toDateString();
+  const active = chores.map(c=>({...c, done: c.done && c.doneDate===today}));
+  const el = document.getElementById('chore-list');
+  const sec = document.getElementById('chore-section');
+  if(!el||!sec) return;
+  sec.style.display = 'block';
+  el.innerHTML = active.map(c=>`
+    <div class="chore-item ${c.done?'done':''}" onclick="toggleChore('${c.id}')">
+      <div class="chore-check">${c.done?'✓':''}</div>
+      <div class="chore-text">${esc(c.text)}</div>
+      ${c.who?`<div class="chore-who">${esc(c.who)}</div>`:''}
+    </div>`).join('');
+}
+// Initial chore render
+renderChores(loadChores());
+
+init();
+</script>
+</body>
+</html>
